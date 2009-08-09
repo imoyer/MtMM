@@ -1,0 +1,182 @@
+' The following licensing information must accompany this file at all times.
+' ********** Licensing Information **********
+' Copyright 2001 ShopBot Tools
+' We encourage ShopBot users to modify this part file to suit their own needs and have licensed it 
+' under the Creative Commons Atribution 3.0 license.  This license allows you to copy, distribute, 
+' or modify the file with certain restrictions. Any other use requires permission from ShopBot Tools.
+'
+' A simplified explanantion of this license is available at  
+' http://creativecommons.org/licenses/by/3.0/us/ 
+'
+' and the full legal code can be found at 
+' http://creativecommons.org/licenses/by/3.0/us/legalcode
+' We encourage you to read this legal code before modifying or distributing  this file, 
+' ESPECIALLY sections 5 and 6 that cover warranties and liability.
+'
+' If you plan on distributing your new version, you must also state in the header of your file that it
+' is a modification of a file supplied by Shopbot Tools, supply information on finding the original file, 
+' and rename the file to make it clear to the user that it is a modified version. 
+' ********** End Licensing Information **********
+'
+' User takes responsibility for the effects and outcomes of the use of this program, and ShopBot Tools assumes
+' no liability it's use.
+'XYZERO.SBP -- Example File showing how to Zero XY Axes with Proximity Switches
+'Copyright 1998-2005. ShopBot Tools, Inc.
+'T.Hall 12/98,7/00,5/01,4/04,7/05,6/07
+'B.Young 9/05, 4/06
+'G.Bergfors,T.Hall 3/07 Handles option of Inputs #2 and #3 being normally-closed switches; 
+'                         vs alternative of #3 having two normally-open switches
+'
+'User takes responsibility for the effects and outcomes of the use of this program.
+'
+
+'Determine whether we are in Preview mode or Move/Cut mode
+   &modenow = %(22)
+   IF &modenow = 1 THEN GOSUB Changemode
+
+'Load the custom variables file from Custom Cut 90
+C#,90
+
+'Get Speed Limits
+IF %(25) = 0 THEN GOSUB GetInchSpeedLimits
+IF %(25) = 1 THEN GOSUB GetMetricSpeedLimits
+
+&SCALE = 1
+
+IF &my_units <> %(25) THEN GOSUB Changeunits
+&X_dist = (&my_XYzeroOffsetX * &SCALE)
+&Y_dist = (&my_XYzeroOffsetY * &SCALE)
+
+
+'----------------------------------------------------------------Read the starting speed values to reset later  
+   &start_XYmove_Speed = %(71)
+   &start_XYjog_Speed = %(76)
+
+   &XYapproach_Speed = &start_XYmove_Speed
+   &XYtempJog_Speed = &start_XYjog_Speed
+   If &XYapproach_Speed > &TopApproachSpeed then &XYapproach_Speed = &TopApproachSpeed
+   If &XYtempJog_Speed > &TopJogSpeed then &XYtempJog_Speed = &TopJogSpeed
+
+   VS, &XYapproach_Speed,,,,&XYtempJog_Speed                    '... and assign slower speeds
+'---------------------------------------------------------------------------------------------------------------
+
+
+    &TrgtHIT = 1
+    &Xtrgt = 1
+    &Ytrgt = 1
+Check_Switch_Status:
+    IF %(51)= 1 THEN GOTO Getoffprox  
+    GOTO Start_Zeroing
+
+
+Start_Zeroing:
+   SA     	'Set tool to Absolute mode
+
+'Limits are deactivated here, automatically reset to original state when file ends 
+   VN, 0                    'Deactivate the limit switch functionality on input #3
+   SF, 0                    'Deactivate software limits
+
+' Only move to safe Z position if it's above the current position
+   &zup = (&my_XYzeroSafeZ * &SCALE)
+   IF %(3) < &zup THEN MZ, &zup
+
+'Start Homing in the X axis
+  'First set the contact switch action ... 
+   ON INP(&Xtrgt,&TrgtHIT) GOSUB Xcontact   'this is where we'll go on contact with switch 
+
+  'Then start the move in X (just a big negative number ... assumes we'll hit prox switch)
+   JX, &big_move
+  ' ... we return here after handling X homing
+            
+'Start Homing in the Y Axis
+  'First set the contact switch action ... 
+   ON INP(&Ytrgt,&TrgtHIT) GOSUB YCONTACT   'this is where we'll go on contact with switch
+
+  'Then start the move in Y (just a big negative number ... assumes we'll hit prox switch)
+   JY, &big_move
+  ' ... we return here after handling Y homing
+  ' ... and reset speeds
+   VS, &start_XYmove_Speed,,,,&start_XYjog_Speed
+
+
+'Tool is now Zeroed in X and Y Axis.
+   PAUSE 
+
+   END 	'This END statement causes the program to end here without
+            '  dropping through to subroutines
+
+
+'SUBROUTINES ---------------------------------------------------------------------------
+Xcontact:
+ 'This is our subroutine for action on hitting the switch
+   'We hit the prox switch! 
+     ON INP(&Xtrgt,&TrgtHIT)    'Set switch to nothing to turn off
+     VA, &X_dist                'Set approx position
+     PAUSE 1
+     JX, &move_off_switch       'Move back out for another pass
+     ON INP(&Xtrgt,&TrgtHIT) GOTO Xagain
+     MX, &small_move
+     END
+  Xagain:
+     ON INP(&Xtrgt,&TrgtHIT)    'Set switch to nothing to turn off
+     VA,&X_dist,,,,,0           '>>>>>Set real position and Zero Table Base Coordinates
+     PAUSE 1
+     JX, 0                      'Jog X to park position (*could put another location here)
+'X Axis now zeroed ...
+     PAUSE 1
+ RETURN                         'This RETURNs us to the next main file line
+
+Ycontact:
+ 'This is our subroutine for action on hitting the switch
+   'We hit the prox switch! 
+     ON INP(&Ytrgt,&TrgtHIT)    'Set switch to nothing to prevent secondary trigger
+     VA,, &Y_dist  'Set position
+     PAUSE 1
+     JY, &move_off_switch       'Move back out for another pass
+     ON INP(&Ytrgt,&TrgtHIT) GOTO Yagain
+     MY, &small_move
+     END
+  Yagain:
+     ON INP(&Ytrgt,&TrgtHIT)    'Set switch to nothing to prevent secondary trigger
+     VA,,&Y_dist,,,,,0          '>>>>>Set real position and Zero Table Base Coordinates
+     PAUSE 1
+     JY, 0                      'Jog Y to park position (*could put another location here)
+'Y Axis now zeroed ...
+     PAUSE 1
+ RETURN                         'This RETURNs us to the next main file line
+                                'interrupted by the switch
+
+'SPECIAL SUBROUTINES -------------------------------------------------------------------
+Changemode:
+'Tool will not do XY Zeoring in Preview Mode. Quit and change Move/Cut mode ...
+    PAUSE 
+ END                            'Exit program now
+
+Getoffprox:
+'Use Arrow Keys to move Off of Prox Switch (ESC when Clear)
+    PAUSE
+    SK    
+ GOTO Check_Switch_Status       'Go Back to Re-check Status
+
+Changeunits:
+'You are using a different unit system (inches/millimeters) than you used when this program was set up. Do you want to change the settings?
+   PAUSE
+   IF %(25) = 1 THEN &SCALE = 25.4
+   IF %(25) = 0 THEN &SCALE = 0.03937
+ RETURN
+
+GetInchSpeedLimits:
+   &TopApproachSpeed = .05
+   &TopJogSpeed = .2
+   &move_off_switch = .1
+   &big_move = -1
+   &small_move = -.2
+ RETURN
+
+GetMetricSpeedLimits:
+   &TopApproachSpeed = 1.25
+   &TopJogSpeed = 5.08
+   &move_off_switch = 2.54
+   &big_move = -25.4
+   &small_move = -5.08
+ RETURN

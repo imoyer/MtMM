@@ -1,0 +1,161 @@
+' The following licensing information must accompany this file at all times.
+' ********** Licensing Information ******************************************************
+' Copyright 2001 ShopBot Tools
+' We encourage ShopBot users to modify this part file to suit their own needs and have licensed it 
+' under the Creative Commons Atribution 3.0 license.  This license allows you to copy, distribute, 
+' or modify the file with certain restrictions. Any other use requires permission from ShopBot Tools.
+'
+' A simplified explanantion of this license is available at  
+' http://creativecommons.org/licenses/by/3.0/us/ 
+'
+' and the full legal code can be found at 
+' http://creativecommons.org/licenses/by/3.0/us/legalcode
+' We encourage you to read this legal code before modifying or distributing  this file, 
+' ESPECIALLY sections 5 and 6 that cover warranties and liability.
+'
+' If you plan on distributing your new version, you must also state in the header of your file that it
+' is a modification of a file supplied by Shopbot Tools, supply information on finding the original file, 
+' and rename the file to make it clear to the user that it is a modified version. 
+' ********** End Licensing Information **************************************************
+'
+'****************************************************************************************
+'ZZERO.SBP -- Example File showing how to Zero Z Axis on Contact Plate
+'Copyright 1998-2008. ShopBot Tools, Inc.
+'T.Hall 12/98,7/00,5/01,4/04,7/05,6/07,2/08
+'B.Young 9/05,4/06
+'F.Smith 8/08 (remove clip)
+'User takes responsibility for the effects and outcomes of the use of this program.
+'Table Base Coordinates Zeroed During Routine
+'Variables in this file are read from the my_variables.sbc file in c:\Sbparts\Custom
+
+'**TEST YOUR PLATE BY TAPPING IT AGAINST BIT --> SWITCH INDICATOR SHOULD ACTIVE ON SCREEN
+'**BEFORE RUNNING ROUTINE, MOVE TOOL to and INCH or TWO above PLATE
+
+
+'Initialize
+   SA,          'Let's be in Absolute Mode
+   SF,0         'Turn off limit checking temporarily here
+
+'Determine whether we are in Preview mode or Move/Cut mode
+   &modenow = %(22)
+   IF &modenow = 1 THEN GOTO CHANGEMODE
+
+'Load variables from my_variables.sbc, process called by Custom Cut 90
+   C#,90
+
+'Make sure that the units are those used with the Set-Up Program and expected by my_variables.sbc
+   &SCALE = 1
+   IF &my_units <> %(25) THEN GOSUB CHANGEUNITS
+
+   'Set thickness and pull-up distance
+      &zbot = &my_ZzeroThickness * &SCALE
+      &zup = &my_ZzeroSafeZ * &SCALE
+
+   'Set a value for our first Z move
+      &big_plunge = %(3) - 10
+      IF %(25) = 1 THEN &big_plunge = %(3) - 254
+
+   'Check to see if we should move to a zeroing location
+      IF &my_ZzeroStartX <> no THEN GOSUB STARTMOVE
+
+   'Save current speeds and set zeroing speed
+      &start_Zmove_Speed = %(73)
+      &new_Zmove_Speed = .1
+      IF %(25) = 1 THEN &new_Zmove_Speed = 2.54
+
+
+'----------------------------------------------------------------Zeroing PROGRAM 
+FIRST PLUNGE:
+'Make First Plunge... the following line will display first and wait for key stroke
+
+'            *** Hit ENTER When above plate and Ready to Zero ***
+  PAUSE        
+  GOSUB TEST_CLEAR           'Test to make sure the plate is not already contacting or probe hooked up           
+               
+'Now set-up the contact switch action ... 
+  ON INP(&my_ZzeroInput,1) GOTO CONTACT1 'this is where we'll go on contact with plate
+
+  VS, ,(&new_Zmove_Speed * 4 )
+  MZ, &big_plunge            'Start continuous plunge ... while looking for contact to occur
+
+'If we don't contact anything for some reason we end up here
+  ON INP(&my_ZzeroInput,1)   'Turn off switch check
+  VS, ,&start_Zmove_Speed    'Reset Speeds because zeroing failed
+ 'Zeroing Failed!
+  PAUSE
+END                          'This END statement causes the program to end here if not contact
+
+SECOND PLUNGE:
+'Make a Second Slower Plunge to get it really accurate
+  GOSUB TEST_CLEAR 'Check for clear again          
+	         
+'Set-up the second contact switch action ... 
+  ON INP(&my_ZzeroInput,1) GOSUB CONTACT2 'this is where we'll go on contact with plate
+
+  VS, , &new_Zmove_Speed
+  &little_plunge = %(3) - 2
+  IF %(25) = 1 THEN &little_plunge = %(3) - 50.8
+  MZ, &little_plunge         'Start continuous plunge ... looking for second contact to occur
+
+'If we don't contact anything for some reason we end up here
+  ON INP(&my_ZzeroInput,1)   'Turn off switch check
+  VS, ,&start_Zmove_Speed    'Reset Speeds because zeroing failed
+ 'Zeroing Failed!
+  PAUSE
+END                          'This END statement causes the program to end here if no contact
+
+'================================================================Subroutines
+
+CONTACT1:
+'This is our subroutine for action on hitting the plate the first time
+     VA,,,&zbot                'Set the approximate Z location based on thickness
+     PAUSE 1    
+     JZ, &zup                  'Pull-up SLIGHTLY ... 
+    'Now We're Ready to Make Slow Move for Accurate Reading
+     PAUSE 1
+     GOTO SECOND PLUNGE
+
+CONTACT2:
+'This is our subroutine for action on hitting the plate the second time
+     VA,,,&zbot,,,,,0          'Set final Z location and Zero Table Base Coordinate
+     PAUSE 1
+     VS, ,&start_Zmove_Speed
+     JZ, &zup                  'Pull-up to safe height
+    '***ZEROED! REMEMBER TO REMOVE ALLEGATOR CLIP, AND PUT AWAY PLATE!***
+     PAUSE
+END
+
+TEST_CLEAR:
+     &cleared = &my_ZzeroInput + 50
+     IF %(&cleared) = 1 THEN PAUSE 3
+     IF %(&cleared) = 1 THEN GOTO NO_CLEAR
+RETURN
+
+
+NO_CLEAR:
+    'Reset the orginal Z speed
+     VS, ,&start_Zmove_Speed
+    'Z-Contact did not clear for some reason. Exiting.
+     PAUSE
+END
+
+CHANGEUNITS:
+    'You are using a different Unit System (inches/millimeters) than you used with the Set-Up Tool. Changing the routine to match your current units.
+     PAUSE
+     IF %(25) = 1 THEN &SCALE = 25.4
+     IF %(25) = 0 THEN &SCALE = 0.03937
+RETURN
+
+STARTMOVE:
+    'Hit OK to move to your preferred starting point to start the routine.
+     PAUSE
+     IF %(3) < &zup THEN JZ, &zup
+     J2, &my_ZzeroStartX, &my_ZzeroStartY
+RETURN
+
+CHANGEMODE:
+    'Tool won't home in Preview Mode. Quit and change Move/Cut mode ...
+     PAUSE 
+END 'Exit program Now
+
+	
